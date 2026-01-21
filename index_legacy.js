@@ -1,22 +1,25 @@
 #!/usr/bin/env node
 // @ts-nocheck
-import {Server} from '@modelcontextprotocol/sdk/server/index.js';
-import {StdioServerTransport} from '@modelcontextprotocol/sdk/server/stdio.js';
-import {CallToolRequestSchema, ListToolsRequestSchema} from '@modelcontextprotocol/sdk/types.js';
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+} from '@modelcontextprotocol/sdk/types.js';
 import Database from 'better-sqlite3';
-import {Octokit} from '@octokit/rest';
+import { Octokit } from '@octokit/rest';
 import ollama from 'ollama';
 import * as sqliteVec from 'sqlite-vec';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import {PDFParse} from 'pdf-parse';
-import {pipeline} from '@xenova/transformers';
+import { PDFParse } from 'pdf-parse';
+import { pipeline } from '@xenova/transformers';
 import os from 'os';
 
 const SERVER_DIR = path.join(os.homedir(), '.mcp-knowledge-mind');
 if (!fs.existsSync(SERVER_DIR)) {
-  fs.mkdirSync(SERVER_DIR, {recursive: true});
+  fs.mkdirSync(SERVER_DIR, { recursive: true });
 }
 
 // Configuration
@@ -33,12 +36,18 @@ const SYSTEM_CONFIG = {
 };
 
 const logInfo = (msg) => {
-  fs.appendFileSync(`${SERVER_DIR}/server_info.log`, `[${new Date().toISOString()}] ${msg}\n`);
+  fs.appendFileSync(
+    `${SERVER_DIR}/server_info.log`,
+    `[${new Date().toISOString()}] ${msg}\n`,
+  );
 };
 
 // Setup error logging to file because Claude stdio is tricky
 const logError = (msg) => {
-  fs.appendFileSync(`${SERVER_DIR}/server_error.log`, `[${new Date().toISOString()}] ${msg}\n`);
+  fs.appendFileSync(
+    `${SERVER_DIR}/server_error.log`,
+    `[${new Date().toISOString()}] ${msg}\n`,
+  );
 };
 
 logError('SYSTEM: Starting MCP server...');
@@ -117,7 +126,7 @@ db.exec(`
   );
 `);
 
-const octokit = new Octokit({auth: process.env.GITHUB_CLASSIC_TOKEN});
+const octokit = new Octokit({ auth: process.env.GITHUB_CLASSIC_TOKEN });
 
 async function initEmbeddingProvider() {
   logInfo('SYSTEM: Checking embedding provider...');
@@ -130,14 +139,27 @@ async function initEmbeddingProvider() {
     SYSTEM_CONFIG.embeddingParams.provider = 'local-transformers';
     SYSTEM_CONFIG.embeddingParams.model = 'nomic-ai/nomic-embed-text-v1.5';
     logInfo(
-      '⚠️ OLLAMA not detected. Switching to local transformers (nomic-ai/nomic-embed-text-v1.5).'
+      '⚠️ OLLAMA not detected. Switching to local transformers (nomic-ai/nomic-embed-text-v1.5).',
     );
     logInfo('⏳ Loading internal model... (this may take a moment first time)');
     SYSTEM_CONFIG.embeddingParams.pipeline = await pipeline(
       'feature-extraction',
-      SYSTEM_CONFIG.embeddingParams.model
+      SYSTEM_CONFIG.embeddingParams.model,
     );
     logInfo('✅ Internal model loaded successfully.');
+  }
+}
+
+/**
+ * Process an array of items in batches with concurrency control
+ * @param {Array} items - Array of items to process
+ * @param {number} batchSize - Number of items to process concurrently
+ * @param {Function} processFn - Async function to process each item
+ */
+async function processBatch(items, batchSize, processFn) {
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize);
+    await Promise.all(batch.map(processFn));
   }
 }
 
@@ -148,7 +170,10 @@ async function getEmbedding(text, model = SYSTEM_CONFIG.embeddingModel) {
   }
 
   // Calculate query and model hash
-  const queryHash = crypto.createHash('sha256').update(`${model}:${text}`).digest('hex');
+  const queryHash = crypto
+    .createHash('sha256')
+    .update(`${model}:${text}`)
+    .digest('hex');
 
   // Attempt to retrieve from cache
   const cached = db
@@ -157,7 +182,7 @@ async function getEmbedding(text, model = SYSTEM_CONFIG.embeddingModel) {
     SELECT embedding, last_accessed
     FROM query_embeddings_cache
     WHERE query_hash = ?
-  `
+  `,
     )
     .get(queryHash);
 
@@ -169,7 +194,7 @@ async function getEmbedding(text, model = SYSTEM_CONFIG.embeddingModel) {
       SET last_accessed = CURRENT_TIMESTAMP,
           access_count = access_count + 1
       WHERE query_hash = ?
-    `
+    `,
     ).run(queryHash);
 
     // Convert BLOB to Float32Array
@@ -178,7 +203,9 @@ async function getEmbedding(text, model = SYSTEM_CONFIG.embeddingModel) {
 
   // Use the active model from params if the default was passed
   const activeModel =
-    model === SYSTEM_CONFIG.embeddingModel ? SYSTEM_CONFIG.embeddingParams.model : model;
+    model === SYSTEM_CONFIG.embeddingModel
+      ? SYSTEM_CONFIG.embeddingParams.model
+      : model;
 
   try {
     let embedding;
@@ -215,8 +242,13 @@ async function getEmbedding(text, model = SYSTEM_CONFIG.embeddingModel) {
       ON CONFLICT(query_hash) DO UPDATE SET
         last_accessed = CURRENT_TIMESTAMP,
         access_count = access_count + 1
-    `
-    ).run(text.substring(0, 500), queryHash, activeModel, Buffer.from(embedding.buffer));
+    `,
+    ).run(
+      text.substring(0, 500),
+      queryHash,
+      activeModel,
+      Buffer.from(embedding.buffer),
+    );
 
     return embedding;
   } catch (error) {
@@ -239,11 +271,13 @@ function cleanupCache() {
         ORDER BY last_accessed ASC
         LIMIT (SELECT COUNT(*) - 1000 FROM query_embeddings_cache)
       )
-    `
+    `,
       )
       .run();
     if (result.changes > 0) {
-      logInfo(`SYSTEM: Cache cleanup complete. Entries removed: ${result.changes}`);
+      logInfo(
+        `SYSTEM: Cache cleanup complete. Entries removed: ${result.changes}`,
+      );
     }
   } catch (error) {
     logError(`Cache cleanup error: ${error.message}`);
@@ -306,11 +340,16 @@ function smartChunk(text) {
       const lineWordCount = line.split(/\s+/).length;
 
       // If adding this line exceeds the limit, finalize the current chunk
-      if (currentWordCount + lineWordCount > MAX_CHUNK_SIZE && currentChunk.length > 0) {
+      if (
+        currentWordCount + lineWordCount > MAX_CHUNK_SIZE &&
+        currentChunk.length > 0
+      ) {
         finalizeChunk();
         // Continue with the same header
         currentChunk.push(`(Continuation of: ${currentHeader})`);
-        currentWordCount += `(Continuation of: ${currentHeader})`.split(/\s+/).length;
+        currentWordCount += `(Continuation of: ${currentHeader})`.split(
+          /\s+/,
+        ).length;
       }
 
       currentChunk.push(line);
@@ -332,7 +371,10 @@ function smartChunk(text) {
 }
 
 // 3. CREATE THE SERVER
-const server = new Server({name: 'docs-mcp-knowledge-mind', version: '1.0.0'}, {capabilities: {tools: {}}});
+const server = new Server(
+  { name: 'docs-mcp-knowledge-mind', version: '1.0.0' },
+  { capabilities: { tools: {} } },
+);
 
 server.setRequestHandler(ListToolsRequestSchema, async () => ({
   tools: [
@@ -343,27 +385,29 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       inputSchema: {
         type: 'object',
         properties: {
-          owner: {type: 'string'},
-          repo: {type: 'string'},
-          branch: {type: 'string', default: 'main'},
+          owner: { type: 'string' },
+          repo: { type: 'string' },
+          branch: { type: 'string', default: 'main' },
         },
         required: ['owner', 'repo'],
       },
     },
     {
       name: 'ask_knowledge',
-      description: 'Search through indexed docs using Hybrid Search (RRF - Lexical + Semantic).',
+      description:
+        'Search through indexed docs using Hybrid Search (RRF - Lexical + Semantic).',
       inputSchema: {
         type: 'object',
         properties: {
-          query: {type: 'string'},
+          query: { type: 'string' },
         },
         required: ['query'],
       },
     },
     {
       name: 'get_status',
-      description: 'Get system architectural statistics, source distribution, and cache info.',
+      description:
+        'Get system architectural statistics, source distribution, and cache info.',
       inputSchema: {
         type: 'object',
         properties: {},
@@ -375,7 +419,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
       inputSchema: {
         type: 'object',
         properties: {
-          directoryPath: {type: 'string', description: 'Absolute path to the local directory'},
+          directoryPath: {
+            type: 'string',
+            description: 'Absolute path to the local directory',
+          },
         },
         required: ['directoryPath'],
       },
@@ -384,17 +431,20 @@ server.setRequestHandler(ListToolsRequestSchema, async () => ({
 }));
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const {name, arguments: args} = request.params;
+  const { name, arguments: args } = request.params;
 
   if (name === 'learn_repository') {
-    const {owner, repo, branch = 'main'} = args || {};
+    const { owner, repo, branch = 'main' } = args || {};
     if (!owner || !repo) {
-      return {content: [{type: 'text', text: 'Error: owner and repo are required'}], isError: true};
+      return {
+        content: [{ type: 'text', text: 'Error: owner and repo are required' }],
+        isError: true,
+      };
     }
 
     logInfo(`🌐 SYSTEM: Starting GitHub crawl: ${owner}/${repo}`);
     try {
-      const {data} = await octokit.git.getTree({
+      const { data } = await octokit.git.getTree({
         owner,
         repo,
         tree_sha: branch,
@@ -402,12 +452,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       });
 
       const files = data.tree.filter(
-        (f) => f.path.endsWith('.md') || f.path.endsWith('.mdx') || f.path.endsWith('.pdf')
+        (f) =>
+          f.path.endsWith('.md') ||
+          f.path.endsWith('.mdx') ||
+          f.path.endsWith('.pdf'),
       );
       let totalChunks = 0;
       let processedFiles = 0;
 
-      for (const file of files) {
+      await processBatch(files, 5, async (file) => {
         try {
           const blob = await octokit.git.getBlob({
             owner,
@@ -418,7 +471,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           let text = '';
           if (file.path.endsWith('.pdf')) {
             const buffer = Buffer.from(blob.data.content, 'base64');
-            const pdfData = await new PDFParse().getText({data: buffer});
+            const pdfData = await new PDFParse().getText({ data: buffer });
             text = pdfData.text;
           } else {
             text = Buffer.from(blob.data.content, 'base64').toString('utf8');
@@ -435,7 +488,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               content = excluded.content,
               source_type = 'github'
             RETURNING id
-          `
+          `,
             )
             .get(owner, repo, file.path, file.sha, text);
 
@@ -446,7 +499,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
           // Clean existing chunks
           db.prepare(
-            'DELETE FROM chunks_embeddings WHERE chunk_id IN (SELECT id FROM chunks WHERE doc_id = ?)'
+            'DELETE FROM chunks_embeddings WHERE chunk_id IN (SELECT id FROM chunks WHERE doc_id = ?)',
           ).run(docId);
           db.prepare('DELETE FROM chunks WHERE doc_id = ?').run(docId);
 
@@ -459,11 +512,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 INSERT INTO chunks (doc_id, header, content, word_count)
                 VALUES (?, ?, ?, ?)
                 RETURNING id
-              `
+              `,
               )
               .get(docId, chunk.header, chunk.content, chunk.wordCount || 0);
 
-            if (!insChunk || typeof insChunk !== 'object' || !('id' in insChunk)) {
+            if (
+              !insChunk ||
+              typeof insChunk !== 'object' ||
+              !('id' in insChunk)
+            ) {
               throw new Error('Failed to insert chunk');
             }
             const chunkId = insChunk.id;
@@ -475,7 +532,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               `
                 INSERT INTO chunks_embeddings (chunk_id, embedding)
                 VALUES (?, ?)
-              `
+              `,
             ).run(BigInt(chunkId), embedding);
 
             totalChunks++;
@@ -483,9 +540,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           processedFiles++;
         } catch (fileError) {
           logError(`Error processing file ${file.path}: ${fileError.message}`);
-          continue;
         }
-      }
+      });
       return {
         content: [
           {
@@ -496,7 +552,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     } catch (error) {
       logError(`GitHub crawl error: ${error.stack || error.message}`);
-      return {content: [{type: 'text', text: `Error: ${error.message}`}], isError: true};
+      return {
+        content: [{ type: 'text', text: `Error: ${error.message}` }],
+        isError: true,
+      };
     }
   }
 
@@ -504,10 +563,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const rawArgs = args || {};
     const query = typeof rawArgs.query === 'string' ? rawArgs.query : '';
     const rawLimit = rawArgs.limit;
-    const limit = typeof rawLimit === 'number' ? rawLimit : SYSTEM_CONFIG.hybridSearchLimit;
+    const limit =
+      typeof rawLimit === 'number' ? rawLimit : SYSTEM_CONFIG.hybridSearchLimit;
 
     if (!query) {
-      return {content: [{type: 'text', text: 'Error: query is required'}], isError: true};
+      return {
+        content: [{ type: 'text', text: 'Error: query is required' }],
+        isError: true,
+      };
     }
 
     try {
@@ -528,7 +591,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         WHERE chunks_fts MATCH ?
         ORDER BY rank
         LIMIT ?
-      `
+      `,
         )
         .all(sanitizedFtsQuery, limit * 2);
 
@@ -543,7 +606,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         WHERE embedding MATCH ?
         ORDER BY distance
         LIMIT ?
-      `
+      `,
         )
         .all(queryEmbedding, limit * 2);
 
@@ -554,7 +617,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       ftsResults.forEach((result, rank) => {
         const id = Number(result.rowid);
         const positiveScore = -result.bm25_score;
-        const bm25Weighted = (1 / (k + rank + 1)) * (1 + Math.log(1 + Math.max(0, positiveScore)));
+        const bm25Weighted =
+          (1 / (k + rank + 1)) * (1 + Math.log(1 + Math.max(0, positiveScore)));
         scores.set(id, (scores.get(id) || 0) + bm25Weighted);
       });
 
@@ -572,7 +636,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         .map((entry) => entry[0]);
 
       if (rankedIds.length === 0) {
-        return {content: [{type: 'text', text: 'No results found matching your query.'}]};
+        return {
+          content: [
+            { type: 'text', text: 'No results found matching your query.' },
+          ],
+        };
       }
 
       // Fetch final content
@@ -584,7 +652,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         FROM chunks c
         JOIN docs d ON c.doc_id = d.id
         WHERE c.id IN (${placeholders})
-      `
+      `,
         )
         .all(...rankedIds);
 
@@ -596,10 +664,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           if (!r) return null;
           const icon = r.source_type === 'local' ? '📁' : '🌐';
           const source =
-            r.source_type === 'local' ? r.path : `${r.repo_owner}/${r.repo_name}/${r.path}`;
+            r.source_type === 'local'
+              ? r.path
+              : `${r.repo_owner}/${r.repo_name}/${r.path}`;
           return `${idx + 1}. ${icon} **${r.header}** (${source})\n   ${r.content.substring(
             0,
-            300
+            300,
           )}...\n`;
         })
         .filter(Boolean)
@@ -607,21 +677,30 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       return {
         content: [
-          {type: 'text', text: `### Search Results for: "${query}"\n\n${formattedResults}`},
+          {
+            type: 'text',
+            text: `### Search Results for: "${query}"\n\n${formattedResults}`,
+          },
         ],
       };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : '';
       logError(`Search Error: ${errorStack || errorMsg}`);
-      return {content: [{type: 'text', text: `Search Error: ${errorMsg}`}], isError: true};
+      return {
+        content: [{ type: 'text', text: `Search Error: ${errorMsg}` }],
+        isError: true,
+      };
     }
   }
 
   if (name === 'learn_filesystem') {
-    const {directoryPath, maxDepth = 10} = args || {};
+    const { directoryPath, maxDepth = 10 } = args || {};
     if (typeof directoryPath !== 'string') {
-      return {content: [{type: 'text', text: 'Error: directoryPath is required'}], isError: true};
+      return {
+        content: [{ type: 'text', text: 'Error: directoryPath is required' }],
+        isError: true,
+      };
     }
 
     try {
@@ -640,7 +719,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               const stat = fs.statSync(filePath);
               if (stat && stat.isDirectory()) {
                 results = results.concat(getFiles(filePath, depth + 1));
-              } else if (file.endsWith('.md') || file.endsWith('.mdx') || file.endsWith('.pdf')) {
+              } else if (
+                file.endsWith('.md') ||
+                file.endsWith('.mdx') ||
+                file.endsWith('.pdf')
+              ) {
                 results.push(filePath);
               }
             } catch (e) {
@@ -659,17 +742,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       const repoOwner = '__local__';
       const repoName = path.basename(directoryPath);
 
-      for (const filePath of files) {
+      await processBatch(files, 5, async (filePath) => {
         try {
           let text = '';
           if (filePath.endsWith('.pdf')) {
             const buffer = fs.readFileSync(filePath);
-            const pdfData = await new PDFParse().getText({data: buffer});
+            const pdfData = await new PDFParse().getText({ data: buffer });
             text = pdfData.text;
           } else {
             text = fs.readFileSync(filePath, 'utf8');
           }
-          const fileSha = crypto.createHash('sha256').update(text).digest('hex');
+          const fileSha = crypto
+            .createHash('sha256')
+            .update(text)
+            .digest('hex');
 
           // Layer A: Save Doc
           const insDoc = db
@@ -682,7 +768,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               content = excluded.content,
               source_type = 'local'
             RETURNING id
-          `
+          `,
             )
             .get(repoOwner, repoName, filePath, fileSha, text);
 
@@ -694,7 +780,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
           // Clean existing chunks
           db.prepare(
-            'DELETE FROM chunks_embeddings WHERE chunk_id IN (SELECT id FROM chunks WHERE doc_id = ?)'
+            'DELETE FROM chunks_embeddings WHERE chunk_id IN (SELECT id FROM chunks WHERE doc_id = ?)',
           ).run(docId);
           db.prepare('DELETE FROM chunks WHERE doc_id = ?').run(docId);
 
@@ -707,11 +793,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 INSERT INTO chunks (doc_id, header, content, word_count)
                 VALUES (?, ?, ?, ?)
                 RETURNING id
-              `
+              `,
               )
               .get(docId, chunk.header, chunk.content, chunk.wordCount || 0);
 
-            if (!insChunk || typeof insChunk !== 'object' || !('id' in insChunk)) {
+            if (
+              !insChunk ||
+              typeof insChunk !== 'object' ||
+              !('id' in insChunk)
+            ) {
               throw new Error('Failed to insert chunk');
             }
 
@@ -722,7 +812,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               `
                 INSERT INTO chunks_embeddings (chunk_id, embedding)
                 VALUES (?, ?)
-              `
+              `,
             ).run(BigInt(chunkId), embedding);
 
             totalChunks++;
@@ -731,7 +821,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         } catch (e) {
           logError(`Failed to index file ${filePath}: ${e.message}`);
         }
-      }
+      });
 
       return {
         content: [
@@ -744,7 +834,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       logError(`Local Indexing Error: ${errorMsg}`);
-      return {content: [{type: 'text', text: `Error: ${errorMsg}`}], isError: true};
+      return {
+        content: [{ type: 'text', text: `Error: ${errorMsg}` }],
+        isError: true,
+      };
     }
   }
 
@@ -759,7 +852,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           (SELECT COUNT(*) FROM docs WHERE source_type = 'local') as local_docs,
           (SELECT COUNT(*) FROM chunks) as total_chunks,
           (SELECT COUNT(*) FROM query_embeddings_cache) as cache_entries
-      `
+      `,
         )
         .get();
 
@@ -775,11 +868,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
-      return {content: [{type: 'text', text: `Stats Error: ${errorMsg}`}], isError: true};
+      return {
+        content: [{ type: 'text', text: `Stats Error: ${errorMsg}` }],
+        isError: true,
+      };
     }
   }
 
-  return {content: [{type: 'text', text: `Unknown tool: ${name}`}], isError: true};
+  return {
+    content: [{ type: 'text', text: `Unknown tool: ${name}` }],
+    isError: true,
+  };
 });
 
 // START
