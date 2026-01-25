@@ -2,13 +2,19 @@ import { ContentSplitter } from '../../@domain/services/ContentSplitter.js';
 import { BatchProcessor } from '../../@domain/services/BatchProcessor.js';
 import { Doc } from '../../@domain/entities/Doc.js';
 import { Chunk } from '../../@domain/entities/Chunk.js';
-import { Logger } from '../../@infrastructure/utils/Logger.js';
 
 export class LearnRepositoryUseCase {
-  constructor(docsRepo, githubService, embeddingService) {
+  constructor(docsRepo, githubService, embeddingService, logger = null) {
     this.docsRepo = docsRepo;
     this.githubService = githubService;
     this.embeddingService = embeddingService;
+    this.logger =
+      logger ||
+      ({
+        info: () => {},
+        error: () => {},
+        progress: () => {},
+      });
   }
 
   async execute({ owner, repo, branch }) {
@@ -16,7 +22,9 @@ export class LearnRepositoryUseCase {
       throw new Error('owner and repo are required');
     }
 
-    Logger.info(`🌐 Starting GitHub repository indexing: ${owner}/${repo}`);
+    this.logger.info(
+      `🌐 Starting GitHub repository indexing: ${owner}/${repo}`,
+    );
 
     const files = (
       await this.githubService.getTree(owner, repo, branch)
@@ -27,10 +35,12 @@ export class LearnRepositoryUseCase {
         f.path.endsWith('.pdf'),
     );
 
-    Logger.info(`📁 Found ${files.length} files to index (.md, .mdx, .pdf)`);
+    this.logger.info(
+      `📁 Found ${files.length} files to index (.md, .mdx, .pdf)`,
+    );
 
     const batchSize = BatchProcessor.calculateOptimalBatchSize(files.length);
-    Logger.info(
+    this.logger.info(
       `⚙️ Using batch size: ${batchSize} (optimized for ${files.length} files)`,
     );
 
@@ -82,16 +92,18 @@ export class LearnRepositoryUseCase {
           totalChunks += chunks.length;
           processedFiles++;
         } catch (error) {
-          console.error(`Error processing file ${file.path}:`, error);
+          this.logger.error(
+            `Error processing file ${file.path}: ${error?.stack || error}`,
+          );
         }
       },
       (processed, total) => {
         // Log progress after each batch
-        Logger.progress(processed, total, 'files');
+        this.logger.progress(processed, total, 'files');
       },
     );
 
-    Logger.info(
+    this.logger.info(
       `✅ Completed indexing: ${processedFiles}/${files.length} files, ${totalChunks} chunks`,
     );
 

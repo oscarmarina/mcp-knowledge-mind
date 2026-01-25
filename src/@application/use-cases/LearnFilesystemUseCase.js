@@ -2,15 +2,21 @@ import { ContentSplitter } from '../../@domain/services/ContentSplitter.js';
 import { BatchProcessor } from '../../@domain/services/BatchProcessor.js';
 import { Doc } from '../../@domain/entities/Doc.js';
 import { Chunk } from '../../@domain/entities/Chunk.js';
-import { Logger } from '../../@infrastructure/utils/Logger.js';
 import crypto from 'crypto';
 import path from 'path';
 
 export class LearnFilesystemUseCase {
-  constructor(docsRepo, fsService, embeddingService) {
+  constructor(docsRepo, fsService, embeddingService, logger = null) {
     this.docsRepo = docsRepo;
     this.fsService = fsService;
     this.embeddingService = embeddingService;
+    this.logger =
+      logger ||
+      ({
+        info: () => {},
+        error: () => {},
+        progress: () => {},
+      });
   }
 
   async execute({ directoryPath, maxDepth = 10 }) {
@@ -18,7 +24,9 @@ export class LearnFilesystemUseCase {
       throw new Error('directoryPath is required');
     }
 
-    Logger.info(`📁 Starting local filesystem indexing: ${directoryPath}`);
+    this.logger.info(
+      `📁 Starting local filesystem indexing: ${directoryPath}`,
+    );
 
     const files = await this.fsService.getFilesRecursive(
       directoryPath,
@@ -27,10 +35,12 @@ export class LearnFilesystemUseCase {
     const repoOwner = '__local__';
     const repoName = path.basename(directoryPath);
 
-    Logger.info(`📄 Found ${files.length} files to index (.md, .mdx, .pdf)`);
+    this.logger.info(
+      `📄 Found ${files.length} files to index (.md, .mdx, .pdf)`,
+    );
 
     const batchSize = BatchProcessor.calculateOptimalBatchSize(files.length);
-    Logger.info(
+    this.logger.info(
       `⚙️ Using batch size: ${batchSize} (optimized for ${files.length} files)`,
     );
 
@@ -81,16 +91,18 @@ export class LearnFilesystemUseCase {
           totalChunks += chunks.length;
           processedFiles++;
         } catch (error) {
-          console.error(`Error processing local file ${filePath}:`, error);
+          this.logger.error(
+            `Error processing local file ${filePath}: ${error?.stack || error}`,
+          );
         }
       },
       (processed, total) => {
         // Log progress after each batch
-        Logger.progress(processed, total, 'files');
+        this.logger.progress(processed, total, 'files');
       },
     );
 
-    Logger.info(
+    this.logger.info(
       `✅ Completed indexing: ${processedFiles}/${files.length} local files, ${totalChunks} chunks`,
     );
 

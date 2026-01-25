@@ -16,6 +16,7 @@ import { OllamaEmbeddingService } from './@infrastructure/services/OllamaEmbeddi
 import { LocalEmbeddingService } from './@infrastructure/services/LocalEmbeddingService.js';
 import { GithubService } from './@infrastructure/services/GithubService.js';
 import { FileSystemService } from './@infrastructure/services/FileSystemService.js';
+import { Logger } from './@infrastructure/utils/Logger.js';
 
 // Application
 import { LearnRepositoryUseCase } from './@application/use-cases/LearnRepositoryUseCase.js';
@@ -69,14 +70,20 @@ class AppContainer {
       docsRepo,
       githubService,
       embeddingService,
+      Logger,
     );
     const learnFilesystem = new LearnFilesystemUseCase(
       docsRepo,
       fsService,
       embeddingService,
+      Logger,
     );
-    const askKnowledge = new AskKnowledgeUseCase(docsRepo, embeddingService);
-    const getSystemStatus = new GetSystemStatusUseCase(docsRepo);
+    const askKnowledge = new AskKnowledgeUseCase(
+      docsRepo,
+      embeddingService,
+      Logger,
+    );
+    const getSystemStatus = new GetSystemStatusUseCase(docsRepo, Logger);
 
     // 3. Initialize Interface Config
     this.toolsHandler = new ToolsHandler({

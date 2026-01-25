@@ -1,8 +1,13 @@
 import crypto from 'crypto';
 export class AskKnowledgeUseCase {
-  constructor(docsRepo, embeddingService) {
+  constructor(docsRepo, embeddingService, logger = null) {
     this.docsRepo = docsRepo;
     this.embeddingService = embeddingService;
+    this.logger = logger || {
+      info: () => {},
+      error: () => {},
+      progress: () => {},
+    };
   }
 
   async execute({ query, limit = 10 }) {

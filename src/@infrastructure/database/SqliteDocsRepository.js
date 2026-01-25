@@ -216,7 +216,13 @@ export class SqliteDocsRepository extends IDocsRepository {
       WHERE query_hash IN (
         SELECT query_hash FROM query_embeddings_cache
         ORDER BY last_accessed ASC
-        LIMIT (SELECT COUNT(*) - 1000 FROM query_embeddings_cache)
+        LIMIT (
+          SELECT CASE
+            WHEN COUNT(*) > 1000 THEN COUNT(*) - 1000
+            ELSE 0
+          END
+          FROM query_embeddings_cache
+        )
       )
     `,
       )
@@ -246,11 +252,10 @@ export class SqliteDocsRepository extends IDocsRepository {
         `
        SELECT
          rowid,
-         rank,
          bm25(chunks_fts) as bm25_score
        FROM chunks_fts
        WHERE chunks_fts MATCH ?
-       ORDER BY rank
+       ORDER BY bm25_score ASC
        LIMIT ?
      `,
       )
