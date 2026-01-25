@@ -2,8 +2,8 @@
   "name": "@blockquote-playground/mcp-knowledge-mind",
   "version": "0.1.0",
   "description": "Multi-source MCP RAG server for files (Markdown, PDF) from local folders and GitHub repositories",
-  "main": "index.js",
   "type": "module",
+  "main": "index.js",
   "bin": {
     "mcp-knowledge-mind": "./index.js"
   },
@@ -12,8 +12,8 @@
     "README.md",
     "package.json"
   ],
-  "publishConfig": {
-    "access": "public"
+  "scripts": {
+    "inspect": "npx @modelcontextprotocol/inspector node index.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.2",
@@ -23,5 +23,8 @@
     "ollama": "^0.6.3",
     "pdf-parse": "^2.4.5",
     "sqlite-vec": "^0.1.7-alpha.2"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
