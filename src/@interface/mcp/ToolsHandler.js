@@ -1,3 +1,5 @@
+import { Logger } from '../../@infrastructure/utils/Logger.js';
+
 export class ToolsHandler {
   constructor(useCases) {
     this.useCases = useCases;
@@ -146,7 +148,7 @@ export class ToolsHandler {
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : '';
-      console.error(`Tool Error (${name}):`, errorStack);
+      Logger.error(`Tool Error (${name}): ${errorStack || errorMsg}`);
       return {
         content: [{ type: 'text', text: `Error: ${errorMsg}` }],
         isError: true,

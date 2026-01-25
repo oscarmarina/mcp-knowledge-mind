@@ -176,7 +176,11 @@ export class SqliteDocsRepository extends IDocsRepository {
         )
         .run(hash);
 
-      return new Float32Array(cached.embedding.buffer);
+      return new Float32Array(
+        cached.embedding.buffer,
+        cached.embedding.byteOffset,
+        cached.embedding.byteLength / Float32Array.BYTES_PER_ELEMENT,
+      );
     }
     return null;
   }
@@ -192,7 +196,16 @@ export class SqliteDocsRepository extends IDocsRepository {
         access_count = access_count + 1
     `,
       )
-      .run(text.substring(0, 500), hash, model, Buffer.from(embedding.buffer));
+      .run(
+        text.substring(0, 500),
+        hash,
+        model,
+        Buffer.from(
+          embedding.buffer,
+          embedding.byteOffset,
+          embedding.byteLength,
+        ),
+      );
   }
 
   async cleanup() {

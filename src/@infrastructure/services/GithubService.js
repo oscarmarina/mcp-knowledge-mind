@@ -25,7 +25,8 @@ export class GithubService {
 
     if (filePath.endsWith('.pdf')) {
       const buffer = Buffer.from(blob.data.content, 'base64');
-      const pdfData = await new PDFParse().getText({ data: buffer });
+      const parser = new PDFParse({ data: buffer });
+      const pdfData = await parser.getText();
       return pdfData.text;
     } else {
       return Buffer.from(blob.data.content, 'base64').toString('utf8');

@@ -44,7 +44,8 @@ export class FileSystemService {
   async readFile(filePath) {
     if (filePath.endsWith('.pdf')) {
       const buffer = fs.readFileSync(filePath);
-      const pdfData = await new PDFParse().getText({ data: buffer });
+      const parser = new PDFParse({ data: buffer });
+      const pdfData = await parser.getText();
       return pdfData.text;
     } else {
       return fs.readFileSync(filePath, 'utf8');

@@ -3,7 +3,6 @@ import { BatchProcessor } from '../../@domain/services/BatchProcessor.js';
 import { Doc } from '../../@domain/entities/Doc.js';
 import { Chunk } from '../../@domain/entities/Chunk.js';
 import { Logger } from '../../@infrastructure/utils/Logger.js';
-import crypto from 'crypto';
 
 export class LearnRepositoryUseCase {
   constructor(docsRepo, githubService, embeddingService) {
